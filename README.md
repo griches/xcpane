@@ -27,6 +27,21 @@ Measured on Xcode 27.1 with a five-file Swift package and three compile errors:
 
 It also reads `swift build` and `swift test` from their log output, and a build piped through `tail`, `xcbeautify` or `xcpretty` is still read from the result bundle.
 
+## How this compares to Apple's Xcode MCP
+
+Xcode ships its own MCP server (`xcrun mcpbridge`) that lets Claude build, test and read parsed results through Xcode's tools. From Xcode 27 it can run headless, with Xcode closed, after a one-time `sudo xcrun mcp-server enable`.
+
+If Claude builds through that server, you don't need this mod's log condensing: the MCP already returns structured results. The two solve the problem at different points:
+
+| | Apple's Xcode MCP | xcode-build |
+| --- | --- | --- |
+| Fixes | Builds Claude runs through the MCP's build tool | Builds Claude runs as `xcodebuild` or `swift build` in Bash |
+| Setup | Enable in Xcode; headless mode needs sudo and per-agent approval | Clone and point Claude Code at the folder |
+| Scope | Builds, tests, previews, project navigation, documentation | Build and test results only |
+| Interface | None in Claude Code | A live pane, status line and toast in the terminal |
+
+Use the MCP if you have it set up and Claude uses it to build. This mod helps when Claude reaches for `xcodebuild` in the shell, which it often does, and it adds the pane either way.
+
 ## Requirements
 
 - macOS with Xcode and its command line tools (`xcodebuild`, `xcrun`).
