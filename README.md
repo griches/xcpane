@@ -62,17 +62,25 @@ Add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `~/.claude/set
 
 If the variable already names other folders, separate them with `:`. Restart Claude Code afterwards. This also covers sessions started from the desktop app.
 
-### Check it loaded
+### Check it loaded (optional)
 
-In a session, type `/xcode-build`. The pane opens and says "No builds yet." Then ask Claude to build:
-
-```
-Build the MyApp scheme with xcodebuild and fix any errors.
-```
+Type `/xcode-build` in a session. If the mod is loaded, the pane opens and says "No builds yet." You only need to do this once, to confirm the install.
 
 ## Use
 
-Ask Claude to build or test as you normally would. Nothing else changes.
+There is nothing to switch on. Once the mod is loaded it works by itself whenever Claude runs `xcodebuild`, `swift build` or `swift test`, however you ask:
+
+```
+Build the app and fix any errors.
+```
+
+Each time Claude builds:
+
+- Claude reads the parsed errors in place of the raw log.
+- The status line shows a failure, and a toast shows a success.
+- The pane opens by itself on terminals at least 144 columns wide. On narrower terminals it stays closed until you type `/xcode-build`, and then shows above the prompt.
+
+The commands and keys are only for the pane:
 
 | What | How |
 | --- | --- |
@@ -81,8 +89,6 @@ Ask Claude to build or test as you normally would. Nothing else changes.
 | Show or hide warnings | Focus the pane (`ctrl+x` then `tab`), press `w` |
 | Clear from the pane | Focus the pane, press `c` |
 | Close the pane | `ctrl+x` then `x`, or click its `✕` |
-
-The pane opens by itself when a build starts on terminals at least 144 columns wide. On narrower terminals it waits until you type `/xcode-build`, and then shows above the prompt.
 
 ## Options
 
