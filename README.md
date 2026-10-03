@@ -42,6 +42,24 @@ If Claude builds through that server, you don't need this mod's log condensing: 
 
 Use the MCP if you have it set up and Claude uses it to build. This mod helps when Claude reaches for `xcodebuild` in the shell, which it often does, and it adds the pane either way.
 
+### When the MCP isn't an option
+
+- **No admin rights.** Headless mode is turned on with `sudo`, and approving an agent or folder needs it too. Many company-managed Macs don't give developers admin access.
+- **MCP servers restricted.** An organisation can control which MCP servers Claude Code may use, and some block any that haven't been reviewed.
+- **A broader grant.** The MCP lets an agent drive Xcode itself. This mod adds one flag to an `xcodebuild` command Claude was already allowed to run, reads the result locally with Apple's `xcresulttool`, and sends nothing over the network.
+- **Older Xcode.** Before Xcode 27 the MCP needs Xcode open.
+
+### Why a live pane in the terminal
+
+- **You see what Claude sees.** The pane shows the same errors Claude was handed, so you can tell at a glance whether it is fixing the right thing.
+- **No scrolling.** Build output otherwise sits folded in the transcript. The verdict, error count and files stay visible while the conversation moves on.
+- **Progress while you wait.** A timer runs during the build, then the pane turns red or green.
+- **History.** The last few builds are listed, so you can watch a fix go from two errors to one to green.
+- **Tests and warnings in the same place.** Failed tests show their assertion message, and warnings are one keypress away.
+- **No window switching.** It sits beside the conversation, which matters most over SSH or when Xcode isn't open.
+
+An MCP server returns data to the model and cannot draw interface in Claude Code. That part is specific to mods.
+
 ## Requirements
 
 - macOS with Xcode and its command line tools (`xcodebuild`, `xcrun`).
