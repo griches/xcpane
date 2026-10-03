@@ -1,0 +1,5 @@
+.DS_Store
+node_modules/
+.claude-plugin/types/
+# Promo sources, captures and renders stay local; docs/ holds what the README shows.
+promo/

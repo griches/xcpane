@@ -1,0 +1,61 @@
+{
+  "name": "xcode-build",
+  "version": "0.1.0",
+  "description": "Turns xcodebuild and swift build output into a live pane of errors grouped by file, and hands Claude the diagnostics instead of the raw log.",
+  "author": {
+    "name": "Gary Riches",
+    "url": "https://github.com/griches"
+  },
+  "homepage": "https://github.com/griches/claude-xcode-mod",
+  "repository": "https://github.com/griches/claude-xcode-mod",
+  "license": "MIT",
+  "keywords": [
+    "xcode",
+    "xcodebuild",
+    "swift",
+    "ios",
+    "mod"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "condense": {
+      "type": "boolean",
+      "title": "Condense what Claude reads",
+      "description": "Replace the raw build log in the tool result Claude reads with the parsed errors, warning counts and test failures. The transcript keeps the raw output.",
+      "default": true
+    },
+    "warnings": {
+      "type": "string",
+      "title": "Warnings Claude reads",
+      "description": "count: Claude reads how many warnings each file has. list: Claude reads every warning.",
+      "options": [
+        "count",
+        "list"
+      ],
+      "default": "count"
+    },
+    "resultBundle": {
+      "type": "boolean",
+      "title": "Add -resultBundlePath",
+      "description": "Add -resultBundlePath to xcodebuild commands that name none, so diagnostics come from Xcode's result bundle and not from the log, which Claude Code cuts short on a failing build. The bundle goes to the temporary folder and is deleted once read.",
+      "default": true
+    },
+    "autoOpen": {
+      "type": "string",
+      "title": "Open the pane",
+      "description": "always: when a build starts. failure: when a build fails. never: only on /xcode-build.",
+      "options": [
+        "always",
+        "failure",
+        "never"
+      ],
+      "default": "always"
+    },
+    "compactRow": {
+      "type": "boolean",
+      "title": "Compact transcript row",
+      "description": "Draw a build's result in the transcript as a verdict and its first errors instead of the raw log.",
+      "default": true
+    }
+  }
+}
