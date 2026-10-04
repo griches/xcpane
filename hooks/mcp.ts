@@ -109,3 +109,24 @@ export const parseMcpTests = (data: Json): McpReport | null => {
     durationMs: null,
   }
 }
+
+/**
+ * Reads the result of Xcode MCP's `GetBuildLog`: the issues its build tasks
+ * emitted. `BuildProject` reports errors only, so warnings come from here.
+ */
+export const parseMcpBuildLog = (data: Json): Issue[] | null =>
+  Array.isArray(data.buildLogEntries)
+    ? objects(data.buildLogEntries).flatMap(entry =>
+        objects(entry.emittedIssues)
+          .filter(one => one.severity === 'warning' || one.severity === 'error')
+          .map(
+            (one): Issue => ({
+              severity: one.severity === 'warning' ? 'warning' : 'error',
+              file: text(one.path),
+              line: typeof one.line === 'number' ? one.line : null,
+              column: null,
+              message: text(one.message) ?? 'Unknown issue',
+            }),
+          ),
+      )
+    : null

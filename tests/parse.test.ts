@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { byFile, condense, details, seconds } from '../hooks/format'
-import { parseMcpBuild, parseMcpTests, structuredOf } from '../hooks/mcp'
+import { parseMcpBuild, parseMcpBuildLog, parseMcpTests, structuredOf } from '../hooks/mcp'
 import { parseLog } from '../hooks/log'
 import { findInvocations, withResultBundle } from '../hooks/shell'
 import { parseBuildResults, parseCoverage, parseTestDetails, parseTestSummary } from '../hooks/xcresult'
@@ -13,6 +13,7 @@ import {
   FAILED_SWIFT_BUILD_LOG,
   FAILED_TEST_LOG,
   FAILED_TEST_SUMMARY,
+  MCP_BUILD_LOG,
   MCP_FAILED_BUILD,
   MCP_FAILED_TESTS,
   MCP_SUCCEEDED_BUILD,
@@ -312,6 +313,18 @@ describe('Xcode MCP results', () => {
     expect(structuredOf({ result: MCP_SUCCEEDED_BUILD })).toEqual(data)
     expect(structuredOf({ text: MCP_SUCCEEDED_BUILD })).toEqual(data)
     expect(structuredOf({ text: 'Build action failed.' })).toBeNull()
+  })
+
+  test('reads the warnings BuildProject leaves out from GetBuildLog, one per issue', () => {
+    const issues = parseMcpBuildLog(JSON.parse(MCP_BUILD_LOG))
+    expect(issues?.map(issue => `${issue.severity} ${issue.file?.split('/').at(-1)}:${issue.line}`)).toEqual([
+      'warning HeightUnit.swift:13',
+      'warning ForecastService.swift:14',
+      'warning ForecastService.swift:23',
+      'warning ForecastService.swift:23',
+      'warning TideChartModel.swift:18',
+    ])
+    expect(parseMcpBuildLog({ type: 'error' })).toBeNull()
   })
 
   test('answers null for a result of another shape', () => {

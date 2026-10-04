@@ -7,6 +7,7 @@ import {
   FAILED_BUILD_RESULTS,
   FAILED_TEST_LOG,
   FAILED_TEST_SUMMARY,
+  MCP_BUILD_LOG,
   MCP_FAILED_BUILD,
   MCP_FAILED_TESTS,
   SUCCEEDED_BUILD_LOG,
@@ -55,6 +56,7 @@ const world = (on: On, { bash, bundle, mcp }: World) => {
     toasts: [] as string[],
     opened: [] as string[],
     ran: [] as string[],
+    asked: [] as string[],
     rows: [] as SessionAppendMessage[],
   }
   mock.clock(on, { now: 1_000 })
@@ -71,6 +73,11 @@ const world = (on: On, { bash, bundle, mcp }: World) => {
     return bash.isError === true
       ? { isError: true, result: bash.text, text: bash.text }
       : { result: { stdout: bash.text, stderr: '', interrupted: false }, text: bash.text }
+  })
+  on('mcp.call', (_$, e) => {
+    seen.asked.push(`${e.server} ${e.tool} ${JSON.stringify(e.args)}`)
+
+    return { value: { content: [{ type: 'text', text: MCP_BUILD_LOG }], isError: false } }
   })
   on('fs.exists', (_$, e) => ({ value: bundle !== null && seen.commands.some(command => command.includes(e.path)) }))
   on('process.run', (_$, e) => {
@@ -287,10 +294,11 @@ test('a result bundle the command names is read and left in place', async ($, on
 test('a build through Xcode\'s MCP server reaches the pane and is handed back unchanged', async ($, on) => {
   const seen = world(on, { bash: { text: '' }, bundle: null, mcp: MCP_FAILED_BUILD })
 
-  const ran = await callTool($, { tool: 'mcp__xcode__BuildProject', tool_use_id: 'toolu_m1' })
+  const ran = await callTool($, { tool: 'mcp__xcode__BuildProject', workspaceIdentifier: 'workspace1', tool_use_id: 'toolu_m1' })
 
   expect(ran.result).toMatchObject({ structuredContent: JSON.parse(MCP_FAILED_BUILD) })
-  expect(seen.statuses.at(-1)).toBe('✗ Xcode: 2 errors · 0 warnings')
+  expect(seen.statuses.at(-1)).toBe('✗ Xcode: 2 errors · 5 warnings')
+  expect(seen.asked).toEqual(['xcode GetBuildLog {"severity":"warning","workspaceIdentifier":"workspace1"}'])
   expect(seen.commands).toEqual([])
 
   for (const surface of SURFACES) {
@@ -298,6 +306,10 @@ test('a build through Xcode\'s MCP server reaches the pane and is handed back un
     expect(await ui.find({ type: 'Text', text: /✗ BUILD FAILED/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Xcode build (MCP)' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /No 'max' candidates/ })).toBeDefined()
+    expect(await ui.find({ key: 'warnings' })).toMatchObject({ props: { label: 'Show 5 warnings' } })
+    await ui.press({ key: 'warnings' })
+    expect(await ui.find({ type: 'Text', text: /'suffix' was never mutated/ })).toBeDefined()
+    await ui.press({ key: 'warnings' })
     await ui.unmount()
   }
 

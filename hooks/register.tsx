@@ -17,7 +17,7 @@ import {
 } from './format'
 import type { Detail } from './format'
 import { parseLog } from './log'
-import { parseMcpBuild, parseMcpTests, structuredOf } from './mcp'
+import { parseMcpBuild, parseMcpBuildLog, parseMcpTests, structuredOf } from './mcp'
 import { findInvocations, withResultBundle } from './shell'
 import { parseBuildResults, parseCoverage, parseTestDetails, parseTestSummary } from './xcresult'
 
@@ -83,6 +83,22 @@ const readBundle = async ($: EngineInterface, path: string, hasTests: boolean) =
     return built === null ? null : { built, ...(await readTests($, path, summary)) }
   } catch {
     return null
+  }
+}
+
+/**
+ * The warnings of the build an Xcode MCP server just ran. Its `BuildProject`
+ * result lists errors only, so they are asked for from its build log.
+ */
+const mcpWarnings = async ($: EngineInterface, tool: string, workspace: unknown): Promise<Issue[]> => {
+  try {
+    const server = tool.split('__')[1] ?? ''
+    const args = typeof workspace === 'string' ? { severity: 'warning', workspaceIdentifier: workspace } : { severity: 'warning' }
+    const log = structuredOf({ result: await $.mcp.call(server, 'GetBuildLog', args) })
+
+    return (log === null ? null : parseMcpBuildLog(log))?.filter(one => !isError(one)) ?? []
+  } catch {
+    return []
   }
 }
 
@@ -380,6 +396,9 @@ export const register: Register = (on, options) => {
 
     const bundled =
       report.bundlePath === null ? null : await readTests($, report.bundlePath, report.tests).catch(() => null)
+    const issues = hasTests
+      ? report.issues
+      : [...report.issues, ...(await mcpWarnings($, e.tool, (e as { workspaceIdentifier?: unknown }).workspaceIdentifier))]
 
     await announce(
       $,
@@ -388,9 +407,9 @@ export const register: Register = (on, options) => {
         scheme: report.scheme,
         status: report.status,
         durationMs: report.durationMs ?? elapsed,
-        errorCount: report.issues.filter(isError).length,
-        warningCount: report.issues.filter(one => !isError(one)).length,
-        issues: sorted(report.issues),
+        errorCount: issues.filter(isError).length,
+        warningCount: issues.filter(one => !isError(one)).length,
+        issues: sorted(issues),
         tests: bundled?.tests ?? report.tests,
         coverage: bundled?.coverage ?? null,
         logPath: report.logPath,

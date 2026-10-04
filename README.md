@@ -29,7 +29,7 @@ Repeated ten times, the result without the mod had no error message in it in eig
 - **Condenses what Claude reads.** The tool result becomes the verdict, every error as `file:line:column: error: message`, the failed tests, and a count of warnings per file. The transcript keeps the raw output.
 - **Shows a pane.** Errors grouped by file, failed tests, the slowest tests, line coverage when the run collected it, a toggle for warnings, a running timer while a build is in flight, and the last few builds.
 - **Gives Claude a tool for the rest.** The summary counts warnings without listing them, so the mod adds a tool, `mcp__xcpane__details`, that Claude can call for every warning, error and failed test of the last build. The summary tells Claude it is there.
-- **Follows builds through Xcode's MCP too.** When Claude builds or tests through Apple's Xcode MCP server (`BuildProject`, `RunAllTests`, `RunSomeTests`), the result is left as it is and shown in the same pane, status line and toast.
+- **Follows builds through Xcode's MCP too.** When Claude builds or tests through Apple's Xcode MCP server (`BuildProject`, `RunAllTests`, `RunSomeTests`), the result is left as it is and shown in the same pane, status line and toast. The MCP's build result lists errors only, so the mod also asks its build log for the warnings and shows those.
 - **Sets the status line** on a failure and shows a toast on a success.
 - **Draws a compact transcript row.** The verdict and the first three errors, in place of the raw log. This applies to a build drawn as its own row; in the fullscreen layout Claude Code folds shell commands into one line ("Ran 1 shell command"), and the row is not drawn there.
 
