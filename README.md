@@ -46,7 +46,7 @@ How they differ:
 | | Apple's Xcode MCP | xcpane |
 | --- | --- | --- |
 | Covers | Builds Claude runs through the MCP's build tool | Builds Claude runs as `xcodebuild` or `swift build` in Bash, which it condenses, and builds run through the MCP, which it shows |
-| Setup | Enable in Xcode; headless mode needs sudo and per-agent approval | Clone and point Claude Code at the folder |
+| Setup | Enable in Xcode; headless mode needs sudo and per-agent approval | Two commands |
 | Scope | Builds, tests, previews, project navigation, documentation | Build and test results only |
 | Interface | None in Claude Code | A live pane, status line and toast in the terminal |
 
@@ -97,22 +97,26 @@ If you use several agents, or want the same output in CI, xcsift is the better f
 
 ## Install
 
-Clone the repository somewhere it can stay:
+Two commands, then start a new Claude Code session:
+
+```sh
+claude plugin marketplace add griches/xcpane
+claude plugin install xcpane@griches
+```
+
+The mod then loads in every session.
+
+### From a clone instead
+
+Use this to try it for one session, or to work on the mod:
 
 ```sh
 git clone https://github.com/griches/xcpane.git ~/.claude/mods/xcpane
-```
-
-### Try it for one session
-
-```sh
 cd /path/to/your/xcode/project
 claude --plugin-dir ~/.claude/mods/xcpane
 ```
 
-### Load it in every session
-
-Add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `~/.claude/settings.json`. The path must be absolute; `~` is allowed.
+To load a clone in every session, add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `~/.claude/settings.json`. The path must be absolute; `~` is allowed. If the variable already names other folders, separate them with `:`.
 
 ```json
 {
@@ -121,8 +125,6 @@ Add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `~/.claude/set
   }
 }
 ```
-
-If the variable already names other folders, separate them with `:`. Restart Claude Code afterwards. This also covers sessions started from the desktop app.
 
 ### Check it loaded (optional)
 
@@ -171,14 +173,20 @@ The mod changes the command Claude runs by appending one flag: `-resultBundlePat
 ## Update and uninstall
 
 ```sh
-git -C ~/.claude/mods/xcpane pull
+claude plugin marketplace update griches
+claude plugin update xcpane@griches
 ```
 
-To uninstall, remove the folder from `CLAUDE_CODE_PLUGIN_DIRS` and delete the clone.
+```sh
+claude plugin uninstall xcpane@griches
+claude plugin marketplace remove griches
+```
+
+For a clone, `git pull` in the folder to update. To uninstall, remove the folder from `CLAUDE_CODE_PLUGIN_DIRS` and delete it.
 
 ## Troubleshooting
 
-- **`/xcpane` is not a command.** The mod did not load. Run `claude plugin validate ~/.claude/mods/xcpane`, check the path in your settings, and check `claude --version`.
+- **`/xcpane` is not a command.** The mod did not load. Check `claude plugin list` shows `xcpane@griches` as enabled, start a new session, and check `claude --version`. For a clone, run `claude plugin validate` on the folder and check the path in your settings.
 - **The pane does not open by itself.** Your terminal is narrower than 144 columns, or `autoOpen` is not `always`. Type `/xcpane`.
 - **A build is not picked up.** See Limits. `claude --debug` logs why a hook was skipped.
 - **Claude still reads the raw log.** The mod only condenses when it found errors or failed tests, or the build succeeded. A failure with no diagnostics passes through unchanged.
