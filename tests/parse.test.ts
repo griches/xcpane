@@ -342,7 +342,7 @@ describe('condense', () => {
     logLines: 288,
     isCondensed: false,
   }
-  const settings = { warnings: 'count', exitCode: 65, isLogCut: false, detailsTool: 'mcp__xcode-build__details' } as const
+  const settings = { warnings: 'count', exitCode: 65, isLogCut: false, detailsTool: 'mcp__xcpane__details' } as const
 
   test('lists every error and counts the warnings', () => {
     expect(condense(build, settings)).toBe(
@@ -352,9 +352,9 @@ describe('condense', () => {
         '',
         `${MATHS}:3:31: error: Cannot convert value of type 'Int' to specified type 'String'`,
         '',
-        '1 warning not listed: Maths.swift (1). Call mcp__xcode-build__details to list them.',
+        '1 warning not listed: Maths.swift (1). Call mcp__xcpane__details to list them.',
         '',
-        "[xcode-build mod: summarised from Xcode's result bundle; 288 lines of raw log omitted.]",
+        "[xcpane: summarised from Xcode's result bundle; 288 lines of raw log omitted.]",
       ].join('\n'),
     )
   })

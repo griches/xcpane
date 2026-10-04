@@ -7,7 +7,7 @@
   },
   "plugins": [
     {
-      "name": "xcode-build",
+      "name": "xcpane",
       "source": "./",
       "description": "Turns xcodebuild and swift build output into a live pane of errors grouped by file, and hands Claude the diagnostics instead of the raw log."
     }

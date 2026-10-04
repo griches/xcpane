@@ -14,12 +14,12 @@ import {
   TEST_DETAILS,
 } from './fixtures'
 
-const PLUGIN = 'xcode-build'
+const PLUGIN = 'xcpane'
 const SURFACES = ['terminal', 'desktop'] as const
 const PANE = {
   plugin: PLUGIN,
   component: 'Pane',
-  requestId: 'xcode-build',
+  requestId: 'xcpane',
   props: {
     title: 'Xcode build',
     isFocused: false,
@@ -144,9 +144,9 @@ test('a failing build: the bundle is asked for, the pane lists the errors, Claud
 
   expect(ran.isError).toBe(true)
   expect(seen.commands).toEqual([
-    "xcodebuild -scheme Demo build -resultBundlePath '/tmp/t/claude-xcode-build/toolu_1.xcresult' 2>&1",
+    "xcodebuild -scheme Demo build -resultBundlePath '/tmp/t/xcpane/toolu_1.xcresult' 2>&1",
   ])
-  expect(seen.opened).toEqual(['xcode-build'])
+  expect(seen.opened).toEqual(['xcpane'])
   expect(seen.statuses.at(-1)).toBe('✗ Demo: 1 error · 1 warning')
   expect(seen.ran).toContain('/bin/rm -rf')
 
@@ -327,11 +327,11 @@ test('tests run through Xcode\'s MCP server show the failed and the slowest test
 test('the details tool lists the warnings a summary only counted', async ($, on) => {
   world(on, { bash: failed(FAILED_BUILD_LOG), bundle: { 'build-results': FAILED_BUILD_RESULTS } })
 
-  const before = await callTool($, { tool: 'mcp__xcode-build__details', tool_use_id: 'toolu_d0' })
+  const before = await callTool($, { tool: 'mcp__xcpane__details', tool_use_id: 'toolu_d0' })
   expect(before.result).toBe('No build has finished in this session yet.')
 
   await $.tool.call({ tool: 'Bash', command: 'xcodebuild -scheme Demo build', tool_use_id: 'toolu_d1' })
-  const after = await callTool($, { tool: 'mcp__xcode-build__details', show: 'warnings', tool_use_id: 'toolu_d2' })
+  const after = await callTool($, { tool: 'mcp__xcpane__details', show: 'warnings', tool_use_id: 'toolu_d2' })
 
   expect(after.result).toContain("Maths.swift:4:26: warning: 'hello()' is deprecated: use greet(_:)")
   expect(after.result).not.toContain(': error: ')

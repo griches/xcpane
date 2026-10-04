@@ -49,7 +49,7 @@ export type Build = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'xcode-build': {
+    'xcpane': {
       builds: Build[]
       isShowingWarnings: boolean
       now: number

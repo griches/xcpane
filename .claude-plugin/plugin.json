@@ -1,13 +1,13 @@
 {
-  "name": "xcode-build",
+  "name": "xcpane",
   "version": "0.2.0",
   "description": "Turns xcodebuild and swift build output into a live pane of errors grouped by file, and hands Claude the diagnostics instead of the raw log.",
   "author": {
     "name": "Gary Riches",
     "url": "https://github.com/griches"
   },
-  "homepage": "https://github.com/griches/claude-xcode-mod",
-  "repository": "https://github.com/griches/claude-xcode-mod",
+  "homepage": "https://github.com/griches/xcpane",
+  "repository": "https://github.com/griches/xcpane",
   "license": "MIT",
   "keywords": [
     "xcode",
@@ -43,7 +43,7 @@
     "autoOpen": {
       "type": "string",
       "title": "Open the pane",
-      "description": "always: when a build starts. failure: when a build fails. never: only on /xcode-build.",
+      "description": "always: when a build starts. failure: when a build fails. never: only on /xcpane.",
       "options": [
         "always",
         "failure",

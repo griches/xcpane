@@ -1,12 +1,12 @@
-# xcode-build
+# xcpane
 
-[![GitHub stars](https://img.shields.io/github/stars/griches/claude-xcode-mod?style=social)](https://github.com/griches/claude-xcode-mod)
-[![CI](https://github.com/griches/claude-xcode-mod/actions/workflows/ci.yml/badge.svg)](https://github.com/griches/claude-xcode-mod/actions/workflows/ci.yml)
-[![License](https://img.shields.io/github/license/griches/claude-xcode-mod.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/griches/xcpane?style=social)](https://github.com/griches/xcpane)
+[![CI](https://github.com/griches/xcpane/actions/workflows/ci.yml/badge.svg)](https://github.com/griches/xcpane/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/griches/xcpane.svg)](LICENSE)
 
 A [Claude Code](https://code.claude.com) mod that turns `xcodebuild` and `swift build` output into a live pane of errors grouped by file, and hands Claude the diagnostics instead of the raw log.
 
-![The xcode-build pane showing a failed build](docs/xcode-build.gif)
+![The pane showing a failed build](docs/xcpane.gif)
 
 ## Why
 
@@ -17,7 +17,7 @@ Measured on Xcode 27.1 with a five-file Swift package and three compile errors:
 | | Without the mod | With the mod |
 | --- | --- | --- |
 | Raw log | 295 lines, 47 KB | the same |
-| What Claude reads | 10,039 characters, none of them an error message | 499 characters, every reported error with its file, line and column |
+| What Claude reads | 10,039 characters, none of them an error message | 570 characters, every reported error with its file, line and column |
 
 Repeated ten times, the result without the mod had no error message in it in eight runs. The method, the demo project and a script to reproduce it are in [`Benchmarks/`](Benchmarks/README.md).
 
@@ -28,7 +28,7 @@ Repeated ten times, the result without the mod had no error message in it in eig
 - **Reads Xcode's result bundle.** Adds `-resultBundlePath` to `xcodebuild` commands that name none, then reads errors, warnings and test failures from the bundle with `xcresulttool`. The bundle goes to the temporary folder and is deleted once read.
 - **Condenses what Claude reads.** The tool result becomes the verdict, every error as `file:line:column: error: message`, the failed tests, and a count of warnings per file. The transcript keeps the raw output.
 - **Shows a pane.** Errors grouped by file, failed tests, the slowest tests, line coverage when the run collected it, a toggle for warnings, a running timer while a build is in flight, and the last few builds.
-- **Gives Claude a tool for the rest.** The summary counts warnings without listing them, so the mod adds a tool, `mcp__xcode-build__details`, that Claude can call for every warning, error and failed test of the last build. The summary tells Claude it is there.
+- **Gives Claude a tool for the rest.** The summary counts warnings without listing them, so the mod adds a tool, `mcp__xcpane__details`, that Claude can call for every warning, error and failed test of the last build. The summary tells Claude it is there.
 - **Follows builds through Xcode's MCP too.** When Claude builds or tests through Apple's Xcode MCP server (`BuildProject`, `RunAllTests`, `RunSomeTests`), the result is left as it is and shown in the same pane, status line and toast.
 - **Sets the status line** on a failure and shows a toast on a success.
 - **Draws a compact transcript row.** The verdict and the first three errors, in place of the raw log. This applies to a build drawn as its own row; in the fullscreen layout Claude Code folds shell commands into one line ("Ran 1 shell command"), and the row is not drawn there.
@@ -41,7 +41,7 @@ Xcode ships its own MCP server (`xcrun mcpbridge`) that lets Claude build, test 
 
 If Claude builds through that server, you don't need this mod's log condensing: the MCP already returns structured results. The mod still shows those builds in its pane. The two solve the problem at different points:
 
-| | Apple's Xcode MCP | xcode-build |
+| | Apple's Xcode MCP | xcpane |
 | --- | --- | --- |
 | Fixes | Builds Claude runs through the MCP's build tool | Builds Claude runs as `xcodebuild` or `swift build` in Bash |
 | Setup | Enable in Xcode; headless mode needs sudo and per-agent approval | Clone and point Claude Code at the folder |
@@ -72,7 +72,7 @@ An MCP server returns data to the model and cannot draw interface in Claude Code
 
 [xcsift](https://github.com/ldomaradzki/xcsift) and [xcbeautify](https://github.com/cpisciotta/xcbeautify) are command-line tools you pipe `xcodebuild` output through. xcsift is built for coding agents and does more than this mod in several places; this mod's difference is that it lives inside Claude Code.
 
-| | xcode-build | xcsift | xcbeautify |
+| | xcpane | xcsift | xcbeautify |
 | --- | --- | --- | --- |
 | What it is | A Claude Code mod | A command-line tool | A command-line tool |
 | Made for | Claude Code | Coding agents and CI | People and CI |
@@ -95,14 +95,14 @@ If you use several agents, or want the same output in CI, xcsift is the better f
 Clone the repository somewhere it can stay:
 
 ```sh
-git clone https://github.com/griches/claude-xcode-mod.git ~/.claude/mods/claude-xcode-mod
+git clone https://github.com/griches/xcpane.git ~/.claude/mods/xcpane
 ```
 
 ### Try it for one session
 
 ```sh
 cd /path/to/your/xcode/project
-claude --plugin-dir ~/.claude/mods/claude-xcode-mod
+claude --plugin-dir ~/.claude/mods/xcpane
 ```
 
 ### Load it in every session
@@ -112,7 +112,7 @@ Add the folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `~/.claude/set
 ```json
 {
   "env": {
-    "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/claude-xcode-mod"
+    "CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/mods/xcpane"
   }
 }
 ```
@@ -121,7 +121,7 @@ If the variable already names other folders, separate them with `:`. Restart Cla
 
 ### Check it loaded (optional)
 
-Type `/xcode-build` in a session. If the mod is loaded, the pane opens and says "No builds yet." You only need to do this once, to confirm the install.
+Type `/xcpane` in a session. If the mod is loaded, the pane opens and says "No builds yet." You only need to do this once, to confirm the install.
 
 ## Use
 
@@ -135,14 +135,14 @@ Each time Claude builds:
 
 - Claude reads the parsed errors in place of the raw log.
 - The status line shows a failure, and a toast shows a success.
-- The pane opens by itself on terminals at least 144 columns wide. On narrower terminals it stays closed until you type `/xcode-build`, and then shows above the prompt.
+- The pane opens by itself on terminals at least 144 columns wide. On narrower terminals it stays closed until you type `/xcpane`, and then shows above the prompt.
 
 The commands and keys are only for the pane:
 
 | What | How |
 | --- | --- |
-| Open the pane | `/xcode-build` |
-| Forget the builds | `/xcode-build clear` |
+| Open the pane | `/xcpane` |
+| Forget the builds | `/xcpane clear` |
 | Show or hide warnings | Focus the pane (`ctrl+x` then `tab`), press `w` |
 | Clear from the pane | Focus the pane, press `c` |
 | Close the pane | `ctrl+x` then `x`, or click its `✕` |
@@ -161,20 +161,20 @@ Each option is a row in Claude Code's config menu (`/config`).
 
 ## Permissions
 
-The mod changes the command Claude runs by appending one flag: `-resultBundlePath '<temporary folder>/claude-xcode-build/<id>.xcresult'`. An allow rule such as `Bash(xcodebuild:*)` still matches. A rule that names one exact command will no longer match and Claude Code will ask; set `resultBundle` to `false` to leave commands untouched.
+The mod changes the command Claude runs by appending one flag: `-resultBundlePath '<temporary folder>/xcpane/<id>.xcresult'`. An allow rule such as `Bash(xcodebuild:*)` still matches. A rule that names one exact command will no longer match and Claude Code will ask; set `resultBundle` to `false` to leave commands untouched.
 
 ## Update and uninstall
 
 ```sh
-git -C ~/.claude/mods/claude-xcode-mod pull
+git -C ~/.claude/mods/xcpane pull
 ```
 
 To uninstall, remove the folder from `CLAUDE_CODE_PLUGIN_DIRS` and delete the clone.
 
 ## Troubleshooting
 
-- **`/xcode-build` is not a command.** The mod did not load. Run `claude plugin validate ~/.claude/mods/claude-xcode-mod`, check the path in your settings, and check `claude --version`.
-- **The pane does not open by itself.** Your terminal is narrower than 144 columns, or `autoOpen` is not `always`. Type `/xcode-build`.
+- **`/xcpane` is not a command.** The mod did not load. Run `claude plugin validate ~/.claude/mods/xcpane`, check the path in your settings, and check `claude --version`.
+- **The pane does not open by itself.** Your terminal is narrower than 144 columns, or `autoOpen` is not `always`. Type `/xcpane`.
 - **A build is not picked up.** See Limits. `claude --debug` logs why a hook was skipped.
 - **Claude still reads the raw log.** The mod only condenses when it found errors or failed tests, or the build succeeded. A failure with no diagnostics passes through unchanged.
 

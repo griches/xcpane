@@ -142,7 +142,7 @@ export const condense = (build: Build, settings: CondenseSettings): string => {
   }
 
   const from = build.source === 'xcresult' ? "Xcode's result bundle" : 'the build log'
-  const notes = [`[xcode-build mod: summarised from ${from}; ${plural(build.logLines, 'line')} of raw log omitted.`]
+  const notes = [`[xcpane: summarised from ${from}; ${plural(build.logLines, 'line')} of raw log omitted.`]
 
   if (settings.isLogCut && build.source === 'log') {
     notes.push('The captured log was cut short, so later diagnostics may be missing.')

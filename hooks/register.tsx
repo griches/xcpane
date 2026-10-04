@@ -21,12 +21,12 @@ import { parseMcpBuild, parseMcpTests, structuredOf } from './mcp'
 import { findInvocations, withResultBundle } from './shell'
 import { parseBuildResults, parseCoverage, parseTestDetails, parseTestSummary } from './xcresult'
 
-const PANE = 'xcode-build'
+const PANE = 'xcpane'
 const TITLE = 'Xcode build'
-const COMMAND = 'xcode-build'
-const DETAILS_TOOL = 'mcp__xcode-build__details'
+const COMMAND = 'xcpane'
+const DETAILS_TOOL = 'mcp__xcpane__details'
 // A pattern, since the tool's name is not among the tools the type declarations list.
-const DETAILS_TOOL_NAMED = /^mcp__xcode-build__details$/
+const DETAILS_TOOL_NAMED = /^mcp__xcpane__details$/
 const XCODE_MCP_TOOL = /^mcp__.+__(BuildProject|RunAllTests|RunSomeTests)$/
 const KEPT_BUILDS = 20
 const KEPT_ISSUES = 300
@@ -35,9 +35,9 @@ const ROW_ERRORS = 3
 
 type AutoOpen = 'always' | 'failure' | 'never'
 
-const builds = atom({ plugin: 'xcode-build', key: 'builds' } as const, [])
-const isShowingWarnings = atom({ plugin: 'xcode-build', key: 'isShowingWarnings' } as const, false)
-const now = atom({ plugin: 'xcode-build', key: 'now' } as const, 0)
+const builds = atom({ plugin: 'xcpane', key: 'builds' } as const, [])
+const isShowingWarnings = atom({ plugin: 'xcpane', key: 'isShowingWarnings' } as const, false)
+const now = atom({ plugin: 'xcpane', key: 'now' } as const, 0)
 
 const GLYPH = { running: '●', succeeded: '✓', failed: '✗', cancelled: '◌' } as const
 const TONE = { running: 'warning', succeeded: 'success', failed: 'error', cancelled: undefined } as const
@@ -239,7 +239,7 @@ export const register: Register = (on, options) => {
       bundle = isStale ? null : invocation.resultBundlePath
     } else if (wantsBundle && isAlone && !invocation.hasResultBundleFlag && invocation.action !== 'clean') {
       const temporary = ((await $.env.get('TMPDIR')) ?? '/tmp').replace(/\/+$/, '')
-      bundle = `${temporary}/claude-xcode-build/${id.replace(/[^A-Za-z0-9_-]/g, '')}.xcresult`
+      bundle = `${temporary}/xcpane/${id.replace(/[^A-Za-z0-9_-]/g, '')}.xcresult`
       command = withResultBundle(e.command, invocation, bundle)
       isOwnBundle = true
     }
