@@ -35,22 +35,27 @@ Repeated ten times, the result without the mod had no error message in it in eig
 
 It also reads `swift build` and `swift test` from their log output, and a build piped through `tail`, `xcbeautify` or `xcpretty` is still read from the result bundle.
 
-## How this compares to Apple's Xcode MCP
+## Using it with Apple's Xcode MCP
 
 Xcode ships its own MCP server (`xcrun mcpbridge`) that lets Claude build, test and read parsed results through Xcode's tools. From Xcode 27 it can run headless, with Xcode closed, after a one-time `sudo xcrun mcp-server enable`.
 
-If Claude builds through that server, you don't need this mod's log condensing: the MCP already returns structured results. The mod still shows those builds in its pane. The two solve the problem at different points:
+The two work together. When Claude builds or tests through the MCP, xcpane leaves the result as it is, since it is already structured, and shows it in the pane, status line and toast. When Claude runs `xcodebuild` in the shell instead, xcpane also replaces the raw log with the errors. You can have both set up and get the pane either way.
+
+How they differ:
 
 | | Apple's Xcode MCP | xcpane |
 | --- | --- | --- |
-| Fixes | Builds Claude runs through the MCP's build tool | Builds Claude runs as `xcodebuild` or `swift build` in Bash |
+| Covers | Builds Claude runs through the MCP's build tool | Builds Claude runs as `xcodebuild` or `swift build` in Bash, which it condenses, and builds run through the MCP, which it shows |
 | Setup | Enable in Xcode; headless mode needs sudo and per-agent approval | Clone and point Claude Code at the folder |
 | Scope | Builds, tests, previews, project navigation, documentation | Build and test results only |
 | Interface | None in Claude Code | A live pane, status line and toast in the terminal |
 
-Use the MCP if you have it set up and Claude uses it to build. This mod helps when Claude reaches for `xcodebuild` in the shell, which it often does, and it adds the pane whichever way Claude builds.
+If you have the MCP set up, keep using it and add xcpane for the pane. If you don't, xcpane alone covers the builds Claude runs in the shell, which it often does.
 
 ### When the MCP isn't an option
+
+xcpane works without it:
+
 
 - **No admin rights.** Headless mode is turned on with `sudo`, and approving an agent or folder needs it too. Many company-managed Macs don't give developers admin access.
 - **MCP servers restricted.** An organisation can control which MCP servers Claude Code may use, and some block any that haven't been reviewed.
@@ -76,7 +81,7 @@ An MCP server returns data to the model and cannot draw interface in Claude Code
 | --- | --- | --- | --- |
 | What it is | A Claude Code mod | A command-line tool | A command-line tool |
 | Made for | Claude Code | Coding agents and CI | People and CI |
-| How a build reaches it | By itself, when Claude runs `xcodebuild` | The command is piped through it | The command is piped through it |
+| How a build reaches it | By itself, when Claude runs `xcodebuild` or builds through Xcode's MCP | The command is piped through it | The command is piped through it |
 | Where results come from | Xcode's result bundle, the log as a fallback | The build log, plus coverage files | The build log |
 | Live pane in Claude Code | Yes | No | No |
 | Other agents, CI, Linux | No | Yes | CI yes |
