@@ -13,17 +13,21 @@ export type TestFailure = {
   line: number | null
 }
 
+export type SlowTest = { name: string; seconds: number }
+
 export type Tests = {
   total: number
   passed: number
   failed: number
   skipped: number
   failures: TestFailure[]
+  slowest: SlowTest[]
 }
 
 export type Build = {
   id: string
-  tool: 'xcodebuild' | 'swift'
+  /** `xcode` is a build run through Xcode's MCP server. */
+  tool: 'xcodebuild' | 'swift' | 'xcode'
   action: string
   hasTests: boolean
   scheme: string | null
@@ -34,6 +38,9 @@ export type Build = {
   warningCount: number
   issues: Issue[]
   tests: Tests | null
+  /** Line coverage from 0 to 1, when the run collected it. */
+  coverage: number | null
+  logPath: string | null
   failedCommands: string[]
   source: 'xcresult' | 'log' | 'none'
   logLines: number

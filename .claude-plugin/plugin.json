@@ -1,6 +1,6 @@
 {
   "name": "xcode-build",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Turns xcodebuild and swift build output into a live pane of errors grouped by file, and hands Claude the diagnostics instead of the raw log.",
   "author": {
     "name": "Gary Riches",

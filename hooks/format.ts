@@ -5,9 +5,12 @@ export type FileGroup = { file: string | null; issues: Issue[] }
 export type CondenseSettings = {
   warnings: 'count' | 'list'
   exitCode: number | null
-  logPath: string | null
   isLogCut: boolean
+  /** The tool the model can call for what the summary leaves out, when there is one. */
+  detailsTool: string | null
 }
+
+export type Detail = 'all' | 'errors' | 'warnings' | 'tests'
 
 const LISTED = 50
 
@@ -46,7 +49,9 @@ export const verdict = (build: Build) => `${noun(build)} ${build.status.toUpperC
 
 /** `xcodebuild test, scheme Demo`: what ran. */
 export const subject = (build: Build) => {
-  const command = build.tool === 'swift' ? `swift ${build.action}` : `xcodebuild ${build.action}`
+  const command = { swift: `swift ${build.action}`, xcodebuild: `xcodebuild ${build.action}`, xcode: `Xcode ${build.action} (MCP)` }[
+    build.tool
+  ]
 
   return build.scheme === null ? command : `${command}, scheme ${build.scheme}`
 }
@@ -84,11 +89,20 @@ export const byFile = (issues: readonly Issue[]): FileGroup[] => {
   }))
 }
 
+export const percent = (fraction: number) => `${Math.round(fraction * 100)}%`
+
 const diagnostic = (issue: Issue) => {
   const where = issue.file === null ? '' : `${[issue.file, location(issue)].filter(Boolean).join(':')}: `
 
   return `${where}${issue.severity}: ${issue.message}`
 }
+
+const failedTests = (build: Build, limit: number) =>
+  (build.tests?.failures ?? []).slice(0, limit).map(failure => {
+    const where = failure.file === null ? '' : `${[failure.file, failure.line].filter(Boolean).join(':')}: `
+
+    return `${where}${failure.name}: ${failure.message}`
+  })
 
 const listed = (lines: string[], total: number, word: string) =>
   total > lines.length ? [...lines, `(+${plural(total - lines.length, `more ${word}`)})`] : lines
@@ -110,12 +124,11 @@ export const condense = (build: Build, settings: CondenseSettings): string => {
   }
 
   if (build.tests !== null && build.tests.failures.length > 0) {
-    const failures = build.tests.failures.slice(0, LISTED).map(failure => {
-      const where = failure.file === null ? '' : `${[failure.file, failure.line].filter(Boolean).join(':')}: `
+    blocks.push(['Failed tests:', ...listed(failedTests(build, LISTED), build.tests.failed, 'failed test')])
+  }
 
-      return `${where}${failure.name}: ${failure.message}`
-    })
-    blocks.push(['Failed tests:', ...listed(failures, build.tests.failed, 'failed test')])
+  if (build.coverage !== null) {
+    blocks.push([`Line coverage: ${percent(build.coverage)}`])
   }
 
   if (build.warningCount > 0 && settings.warnings === 'list') {
@@ -124,7 +137,8 @@ export const condense = (build: Build, settings: CondenseSettings): string => {
     const files = byFile(warnings)
       .slice(0, 8)
       .map(group => `${group.file === null ? 'no file' : basename(group.file)} (${group.issues.length})`)
-    blocks.push([`${plural(build.warningCount, 'warning')} not listed: ${files.join(', ')}`])
+    const hint = settings.detailsTool === null ? '' : ` Call ${settings.detailsTool} to list them.`
+    blocks.push([`${plural(build.warningCount, 'warning')} not listed: ${files.join(', ')}.${hint}`])
   }
 
   const from = build.source === 'xcresult' ? "Xcode's result bundle" : 'the build log'
@@ -134,11 +148,55 @@ export const condense = (build: Build, settings: CondenseSettings): string => {
     notes.push('The captured log was cut short, so later diagnostics may be missing.')
   }
 
-  if (settings.logPath !== null) {
-    notes.push(`Full log: ${settings.logPath}`)
+  if (build.logPath !== null) {
+    notes.push(`Full log: ${build.logPath}`)
   }
 
   blocks.push([`${notes.join(' ')}]`])
+
+  return blocks.map(block => block.join('\n')).join('\n\n')
+}
+
+/**
+ * A build in full, for the details tool: every stored error and warning with
+ * its location, the failed and slowest tests, and coverage.
+ */
+export const details = (build: Build, show: Detail): string => {
+  const wants = (one: Detail) => show === 'all' || show === one
+  const of = (severity: Issue['severity']) => build.issues.filter(one => one.severity === severity).map(diagnostic)
+  const took = build.durationMs === null ? '' : ` in ${seconds(build.durationMs)}`
+  const blocks: string[][] = [[`${subject(build)}: ${verdict(build)}${took}`, tally(build)]]
+
+  if (wants('errors')) {
+    blocks.push(build.errorCount === 0 ? ['No errors.'] : listed(of('error'), build.errorCount, 'error'))
+  }
+
+  if (wants('warnings')) {
+    blocks.push(build.warningCount === 0 ? ['No warnings.'] : listed(of('warning'), build.warningCount, 'warning'))
+  }
+
+  if (wants('tests') && build.tests !== null) {
+    const { tests } = build
+    const slowest = tests.slowest.map(test => `  ${test.name}: ${test.seconds.toFixed(2)}s`)
+    blocks.push([
+      `${plural(tests.total, 'test')}: ${tests.passed} passed, ${tests.failed} failed, ${tests.skipped} skipped`,
+      ...listed(failedTests(build, tests.failures.length), tests.failed, 'failed test'),
+    ])
+
+    if (slowest.length > 0) {
+      blocks.push(['Slowest tests:', ...slowest])
+    }
+  } else if (show === 'tests') {
+    blocks.push(['This build ran no tests.'])
+  }
+
+  if (show === 'all' && build.coverage !== null) {
+    blocks.push([`Line coverage: ${percent(build.coverage)}`])
+  }
+
+  if (show === 'all' && build.logPath !== null) {
+    blocks.push([`Full log: ${build.logPath}`])
+  }
 
   return blocks.map(block => block.join('\n')).join('\n\n')
 }

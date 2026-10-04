@@ -1,18 +1,24 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { byFile, condense, seconds } from '../hooks/format'
+import { byFile, condense, details, seconds } from '../hooks/format'
+import { parseMcpBuild, parseMcpTests, structuredOf } from '../hooks/mcp'
 import { parseLog } from '../hooks/log'
 import { findInvocations, withResultBundle } from '../hooks/shell'
-import { parseBuildResults, parseTestSummary } from '../hooks/xcresult'
+import { parseBuildResults, parseCoverage, parseTestDetails, parseTestSummary } from '../hooks/xcresult'
 import type { Build } from '../types'
 import {
+  COVERAGE,
   FAILED_BUILD_LOG,
   FAILED_BUILD_RESULTS,
   FAILED_SWIFT_BUILD_LOG,
   FAILED_TEST_LOG,
   FAILED_TEST_SUMMARY,
+  MCP_FAILED_BUILD,
+  MCP_FAILED_TESTS,
+  MCP_SUCCEEDED_BUILD,
   SUCCEEDED_BUILD_LOG,
   SUCCEEDED_BUILD_RESULTS,
+  TEST_DETAILS,
 } from './fixtures'
 
 const MATHS = '/Users/dev/Demo/Sources/Demo/Maths.swift'
@@ -229,6 +235,91 @@ describe('result bundle', () => {
   })
 })
 
+describe('test details and coverage', () => {
+  test('reads the slowest tests and where a failed test failed', () => {
+    const found = parseTestDetails(TEST_DETAILS)
+    expect(found?.slowest.map(test => test.name)).toEqual([
+      'TideChartModelTests/testLabelUsesUnitSymbol()',
+      'TideChartModelTests/testHighestInMetres()',
+    ])
+    expect(found?.locations.get('TideChartModelTests/testLabelUsesUnitSymbol()')).toEqual({
+      file: '/Users/dev/Tideline/Tests/TidelineTests/TideChartModelTests.swift',
+      line: 16,
+    })
+    expect(parseTestDetails('not json')).toBeNull()
+  })
+
+  test('reads line coverage, leaving the test bundle out', () => {
+    expect(parseCoverage(COVERAGE)).toBeNull()
+    expect(
+      parseCoverage(
+        JSON.stringify([
+          { name: 'App', buildProductPath: '/p/App.app/App', coveredLines: 30, executableLines: 40 },
+          { name: 'Kit', buildProductPath: '/p/Kit.framework/Kit', coveredLines: 30, executableLines: 60 },
+          { name: 'AppTests', buildProductPath: '/p/AppTests.xctest/AppTests', coveredLines: 50, executableLines: 50 },
+        ]),
+      ),
+    ).toBe(0.6)
+    expect(parseCoverage('')).toBeNull()
+  })
+})
+
+describe('Xcode MCP results', () => {
+  test('reads a failed BuildProject result', () => {
+    const report = parseMcpBuild(JSON.parse(MCP_FAILED_BUILD))
+    expect(report).toMatchObject({ status: 'failed', durationMs: 1386, tests: null })
+    expect(report?.issues).toEqual([
+      {
+        severity: 'error',
+        file: '/Users/dev/Tideline/Sources/Tideline/TideChartModel.swift',
+        line: 13,
+        column: null,
+        message: "No 'max' candidates produce the expected contextual result type 'Double'",
+      },
+      {
+        severity: 'error',
+        file: '/Users/dev/Tideline/Sources/Tideline/TideChartModel.swift',
+        line: 23,
+        column: null,
+        message: "Cannot convert value of type 'String' to specified type 'Double'",
+      },
+    ])
+  })
+
+  test('reads a succeeded BuildProject result', () => {
+    expect(parseMcpBuild(JSON.parse(MCP_SUCCEEDED_BUILD))).toMatchObject({ status: 'succeeded', issues: [] })
+  })
+
+  test('reads a RunAllTests result with a failed test', () => {
+    const report = parseMcpTests(JSON.parse(MCP_FAILED_TESTS))
+    expect(report).toMatchObject({ status: 'failed', scheme: 'Tideline' })
+    expect(report?.tests).toMatchObject({ total: 2, passed: 1, failed: 1, skipped: 0 })
+    expect(report?.tests?.failures).toEqual([
+      {
+        name: 'TideChartModelTests/testLabelUsesUnitSymbol()',
+        message: 'XCTAssertEqual failed: ("15.1 ft") is not equal to ("15.1ft")',
+        file: 'Tideline/Tests/TidelineTests/TideChartModelTests.swift',
+        line: 16,
+      },
+    ])
+    expect(report?.bundlePath).toMatch(/\.xcresult$/)
+  })
+
+  test('finds the structured result wherever the engine put it', () => {
+    const data = JSON.parse(MCP_SUCCEEDED_BUILD)
+    expect(structuredOf({ result: { structuredContent: data } })).toEqual(data)
+    expect(structuredOf({ result: { content: [{ type: 'text', text: MCP_SUCCEEDED_BUILD }] } })).toEqual(data)
+    expect(structuredOf({ result: MCP_SUCCEEDED_BUILD })).toEqual(data)
+    expect(structuredOf({ text: MCP_SUCCEEDED_BUILD })).toEqual(data)
+    expect(structuredOf({ text: 'Build action failed.' })).toBeNull()
+  })
+
+  test('answers null for a result of another shape', () => {
+    expect(parseMcpBuild({ type: 'error', data: 'nope' })).toBeNull()
+    expect(parseMcpTests({ type: 'error', data: 'nope' })).toBeNull()
+  })
+})
+
 describe('condense', () => {
   const report = parseBuildResults(FAILED_BUILD_RESULTS)
   const build: Build = {
@@ -244,12 +335,14 @@ describe('condense', () => {
     warningCount: 1,
     issues: report?.issues ?? [],
     tests: null,
+    coverage: null,
+    logPath: null,
     failedCommands: [],
     source: 'xcresult',
     logLines: 288,
     isCondensed: false,
   }
-  const settings = { warnings: 'count', exitCode: 65, logPath: null, isLogCut: false } as const
+  const settings = { warnings: 'count', exitCode: 65, isLogCut: false, detailsTool: 'mcp__xcode-build__details' } as const
 
   test('lists every error and counts the warnings', () => {
     expect(condense(build, settings)).toBe(
@@ -259,7 +352,7 @@ describe('condense', () => {
         '',
         `${MATHS}:3:31: error: Cannot convert value of type 'Int' to specified type 'String'`,
         '',
-        '1 warning not listed: Maths.swift (1)',
+        '1 warning not listed: Maths.swift (1). Call mcp__xcode-build__details to list them.',
         '',
         "[xcode-build mod: summarised from Xcode's result bundle; 288 lines of raw log omitted.]",
       ].join('\n'),
@@ -279,11 +372,29 @@ describe('condense', () => {
       failed: 1,
       skipped: 0,
       failures: [{ name: 'DemoTests/testGreet()', message: 'XCTAssertEqual failed', file: '/T.swift', line: 6 }],
+      slowest: [{ name: 'DemoTests/testGreet()', seconds: 0.4281 }],
     }
     const text = condense({ ...build, hasTests: true, errorCount: 0, warningCount: 0, issues: [], tests }, settings)
     expect(text).toContain('TEST FAILED')
     expect(text).toContain('0 errors · 0 warnings · 2 tests, 1 failed')
     expect(text).toContain('/T.swift:6: DemoTests/testGreet(): XCTAssertEqual failed')
+
+    const full = details({ ...build, hasTests: true, errorCount: 0, issues: [], tests, coverage: 0.874 }, 'all')
+    expect(full).toContain('2 tests: 1 passed, 1 failed, 0 skipped')
+    expect(full).toContain('  DemoTests/testGreet(): 0.43s')
+    expect(full).toContain('Line coverage: 87%')
+  })
+
+  test('the details view lists what the summary only counted', () => {
+    expect(details(build, 'warnings')).toBe(
+      [
+        'xcodebuild build, scheme Demo: BUILD FAILED in 9.8s',
+        '1 error · 1 warning',
+        '',
+        `${MATHS}:4:26: warning: 'hello()' is deprecated: use greet(_:)`,
+      ].join('\n'),
+    )
+    expect(details(build, 'tests')).toContain('This build ran no tests.')
   })
 })
 

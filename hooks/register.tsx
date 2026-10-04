@@ -1,19 +1,39 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Build, Issue } from '../types'
-import { basename, byFile, condense, location, plural, seconds, subject, tally, verdict } from './format'
+import type { Build, Issue, Tests } from '../types'
+import {
+  basename,
+  byFile,
+  condense,
+  details,
+  location,
+  percent,
+  plural,
+  seconds,
+  subject,
+  tally,
+  verdict,
+} from './format'
+import type { Detail } from './format'
 import { parseLog } from './log'
+import { parseMcpBuild, parseMcpTests, structuredOf } from './mcp'
 import { findInvocations, withResultBundle } from './shell'
-import { parseBuildResults, parseTestSummary } from './xcresult'
+import { parseBuildResults, parseCoverage, parseTestDetails, parseTestSummary } from './xcresult'
 
 const PANE = 'xcode-build'
 const TITLE = 'Xcode build'
 const COMMAND = 'xcode-build'
+const DETAILS_TOOL = 'mcp__xcode-build__details'
+// A pattern, since the tool's name is not among the tools the type declarations list.
+const DETAILS_TOOL_NAMED = /^mcp__xcode-build__details$/
+const XCODE_MCP_TOOL = /^mcp__.+__(BuildProject|RunAllTests|RunSomeTests)$/
 const KEPT_BUILDS = 20
 const KEPT_ISSUES = 300
 const PANE_ISSUES = 60
 const ROW_ERRORS = 3
+
+type AutoOpen = 'always' | 'failure' | 'never'
 
 const builds = atom({ plugin: 'xcode-build', key: 'builds' } as const, [])
 const isShowingWarnings = atom({ plugin: 'xcode-build', key: 'isShowingWarnings' } as const, false)
@@ -24,12 +44,31 @@ const TONE = { running: 'warning', succeeded: 'success', failed: 'error', cancel
 
 const isError = (issue: Issue) => issue.severity === 'error'
 
-const xcresult = async ($: EngineInterface, path: string, query: readonly string[]) => {
-  const ran = await $.process.run(['xcrun', 'xcresulttool', 'get', ...query, '--path', path, '--compact'], {
-    timeoutMs: 20_000,
-  })
+const bare = (name: string) => name.replace(/\(\)$/, '')
 
-  return ran.exitCode === 0 ? ran.stdout : ''
+const run = async ($: EngineInterface, argv: readonly string[]) => {
+  const ran = await $.process.run(argv, { timeoutMs: 20_000 })
+
+  return ran.exitCode === 0 && !ran.isStdoutTruncated ? ran.stdout : ''
+}
+
+const xcresult = ($: EngineInterface, path: string, query: readonly string[]) =>
+  run($, ['xcrun', 'xcresulttool', 'get', ...query, '--path', path, '--compact'])
+
+/** What a result bundle says of its tests: the summary, with locations, the slowest tests and coverage added. */
+const readTests = async ($: EngineInterface, path: string, summary: Tests | null) => {
+  const found = parseTestDetails(await xcresult($, path, ['test-results', 'tests']))
+  const coverage = parseCoverage(await run($, ['xcrun', 'xccov', 'view', '--report', '--only-targets', '--json', path]))
+  const tests =
+    summary === null || found === null
+      ? summary
+      : {
+          ...summary,
+          slowest: found.slowest,
+          failures: summary.failures.map(failure => ({ ...failure, ...found.locations.get(failure.name) })),
+        }
+
+  return { tests, coverage }
 }
 
 const readBundle = async ($: EngineInterface, path: string, hasTests: boolean) => {
@@ -39,9 +78,9 @@ const readBundle = async ($: EngineInterface, path: string, hasTests: boolean) =
     }
 
     const built = parseBuildResults(await xcresult($, path, ['build-results']))
-    const tests = hasTests ? parseTestSummary(await xcresult($, path, ['test-results', 'summary'])) : null
+    const summary = hasTests ? parseTestSummary(await xcresult($, path, ['test-results', 'summary'])) : null
 
-    return built === null ? null : { built, tests }
+    return built === null ? null : { built, ...(await readTests($, path, summary)) }
   } catch {
     return null
   }
@@ -51,18 +90,104 @@ const openPane = ($: EngineInterface) => {
   void $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
 }
 
+const store = ($: EngineInterface, build: Build) =>
+  update($, builds, list => [...list.filter(one => one.id !== build.id), build].slice(-KEPT_BUILDS))
+
+const drop = ($: EngineInterface, id: string) => update($, builds, list => list.filter(one => one.id !== id))
+
+/** Shows `running` in the pane with a ticking timer for as long as `work` takes. */
+const track = async <T,>($: EngineInterface, running: Build, autoOpen: AutoOpen, work: () => Promise<T>): Promise<T> => {
+  await update($, now, () => running.startedAt)
+  await store($, running)
+
+  if (autoOpen === 'always') {
+    openPane($)
+  }
+
+  const ticker = $.clock.every(1000, () => {
+    void $.clock
+      .now()
+      .then(at => update($, now, () => at))
+      .catch(() => undefined)
+  })
+
+  try {
+    return await work()
+  } catch (error) {
+    await drop($, running.id)
+    throw error
+  } finally {
+    ticker.cancel()
+  }
+}
+
+/** Stores a finished build and says how it went: the status line on a failure, a toast on a success. */
+const announce = async ($: EngineInterface, finished: Build, autoOpen: AutoOpen) => {
+  await store($, finished)
+
+  if (finished.status === 'failed') {
+    $.ui.status(`${GLYPH.failed} ${finished.scheme ?? (finished.tool === 'xcode' ? 'Xcode' : finished.tool)}: ${tally(finished)}`)
+
+    if (autoOpen === 'failure') {
+      openPane($)
+    }
+  } else {
+    $.ui.status(undefined)
+  }
+
+  if (finished.status === 'succeeded') {
+    $.ui.toast(`${GLYPH.succeeded} ${verdict(finished)} · ${tally(finished)} · ${seconds(finished.durationMs ?? 0)}`)
+  }
+}
+
+const started = (id: string, startedAt: number, facts: Pick<Build, 'tool' | 'action' | 'hasTests' | 'scheme'>): Build => ({
+  ...facts,
+  id,
+  status: 'running',
+  startedAt,
+  durationMs: null,
+  errorCount: 0,
+  warningCount: 0,
+  issues: [],
+  tests: null,
+  coverage: null,
+  logPath: null,
+  failedCommands: [],
+  source: 'none',
+  logLines: 0,
+  isCondensed: false,
+})
+
+const sorted = (issues: readonly Issue[]) =>
+  [...issues.filter(isError), ...issues.filter(one => !isError(one))].slice(0, KEPT_ISSUES)
+
 export const register: Register = (on, options) => {
   const wantsCondense = options.condense !== false
   const wantsBundle = options.resultBundle !== false
   const wantsCompactRow = options.compactRow !== false
   const warnings = options.warnings === 'list' ? 'list' : 'count'
-  const autoOpen = options.autoOpen === 'failure' || options.autoOpen === 'never' ? options.autoOpen : 'always'
+  const autoOpen: AutoOpen = options.autoOpen === 'failure' || options.autoOpen === 'never' ? options.autoOpen : 'always'
   const condensed = new Map<string, string>()
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
       description: 'Show the Xcode build pane: errors by file, warnings, failed tests (clear: forget the builds)',
+    })
+    await $.tool.register({
+      name: 'details',
+      description:
+        'Lists what the most recent xcodebuild, swift build or Xcode MCP build reported, in full: every error and warning with its file, line and message, the failed and slowest tests, and line coverage. Call it when a build summary counted warnings without listing them. It reads stored results and runs no build.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          show: {
+            type: 'string',
+            enum: ['all', 'errors', 'warnings', 'tests'],
+            description: 'Which part to list; all by default.',
+          },
+        },
+      },
     })
 
     return next(e)
@@ -85,6 +210,14 @@ export const register: Register = (on, options) => {
           ? 'Xcode build pane opened. No builds yet.'
           : `Xcode build pane opened. Last: ${subject(latest)}: ${verdict(latest)} · ${tally(latest)}`,
     }
+  })
+
+  on('tool.call', { tool: DETAILS_TOOL_NAMED }, async ($, e) => {
+    const latest = (await read($, builds)).findLast(one => one.status !== 'running')
+    const asked = (e as { show?: unknown }).show
+    const show: Detail = asked === 'errors' || asked === 'warnings' || asked === 'tests' ? asked : 'all'
+
+    return { result: latest === undefined ? 'No build has finished in this session yet.' : details(latest, show) }
   })
 
   on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
@@ -112,49 +245,16 @@ export const register: Register = (on, options) => {
     }
 
     const startedAt = await $.clock.now()
-    const running: Build = {
-      id,
+    const running = started(id, startedAt, {
       tool: invocation.tool,
       action: invocation.action,
       hasTests: invocation.hasTests,
       scheme: invocation.scheme,
-      status: 'running',
-      startedAt,
-      durationMs: null,
-      errorCount: 0,
-      warningCount: 0,
-      issues: [],
-      tests: null,
-      failedCommands: [],
-      source: 'none',
-      logLines: 0,
-      isCondensed: false,
-    }
-    const store = (build: Build) =>
-      update($, builds, list => [...list.filter(one => one.id !== id), build].slice(-KEPT_BUILDS))
-
-    await update($, now, () => startedAt)
-    await store(running)
-
-    if (autoOpen === 'always') {
-      openPane($)
-    }
-
-    const ticker = $.clock.every(1000, () => {
-      void $.clock
-        .now()
-        .then(at => update($, now, () => at))
-        .catch(() => undefined)
     })
-    const ran = await next(command === e.command ? e : { ...e, command })
-      .catch(async (error: unknown) => {
-        await update($, builds, list => list.filter(one => one.id !== id))
-        throw error
-      })
-      .finally(() => ticker.cancel())
+    const ran = await track($, running, autoOpen, () => next(command === e.command ? e : { ...e, command }))
 
     if (ran.deny !== undefined) {
-      await update($, builds, list => list.filter(one => one.id !== id))
+      await drop($, id)
 
       return ran
     }
@@ -179,9 +279,9 @@ export const register: Register = (on, options) => {
 
     const log = parseLog(raw)
     const bundled = bundle === null || isStopped ? null : await readBundle($, bundle, invocation.hasTests)
-    const located = new Map(log.failures.map(failure => [failure.name.replace(/\(\)$/, ''), failure]))
+    const located = new Map(log.failures.map(failure => [bare(failure.name), failure]))
     const logTests = log.passedTests + log.failedTests + log.skippedTests
-    const tests =
+    const tests: Tests | null =
       bundled?.tests ??
       (logTests === 0
         ? null
@@ -191,6 +291,7 @@ export const register: Register = (on, options) => {
             failed: log.failedTests,
             skipped: log.skippedTests,
             failures: log.failures,
+            slowest: [],
           })
     const issues = bundled?.built.issues ?? log.issues
     const errorCount = bundled?.built.errorCount ?? issues.filter(isError).length
@@ -207,18 +308,20 @@ export const register: Register = (on, options) => {
       durationMs: (await $.clock.now()) - startedAt,
       errorCount,
       warningCount: bundled?.built.warningCount ?? issues.filter(one => !isError(one)).length,
-      issues: [...issues.filter(isError), ...issues.filter(one => !isError(one))].slice(0, KEPT_ISSUES),
+      issues: sorted(issues),
       tests:
         tests === null
           ? null
           : {
               ...tests,
               failures: tests.failures.map(failure => {
-                const where = located.get(failure.name.replace(/\(\)$/, ''))
+                const where = failure.file === null ? located.get(bare(failure.name)) : undefined
 
                 return where === undefined ? failure : { ...failure, file: where.file, line: where.line }
               }),
             },
+      coverage: bundled?.coverage ?? null,
+      logPath,
       failedCommands: log.failedCommands.slice(0, 10),
       source: bundled !== null ? 'xcresult' : hasEvidence ? 'log' : 'none',
       logLines: log.lines,
@@ -231,8 +334,8 @@ export const register: Register = (on, options) => {
       const summary = condense(finished, {
         warnings,
         exitCode: exit === null ? null : Number(exit[1]),
-        logPath,
         isLogCut: log.isCut || (ran.isError === true && log.marker === null),
+        detailsTool: DETAILS_TOOL,
       })
 
       if (summary.length < ran.text.length) {
@@ -241,25 +344,60 @@ export const register: Register = (on, options) => {
       }
     }
 
-    await store(finished)
+    await announce($, finished, autoOpen)
 
     if (isOwnBundle && bundle !== null) {
       void $.process.run(['/bin/rm', '-rf', bundle]).catch(() => undefined)
     }
 
-    if (finished.status === 'failed') {
-      $.ui.status(`${GLYPH.failed} ${finished.scheme ?? finished.tool}: ${tally(finished)}`)
+    return ran
+  })
 
-      if (autoOpen === 'failure') {
-        openPane($)
-      }
-    } else {
-      $.ui.status(undefined)
+  // A build Claude runs through Xcode's own MCP server already comes back
+  // structured, so it is left as it is and only shown: pane, status, toast.
+  on('tool.call', { tool: XCODE_MCP_TOOL }, async ($, e, next) => {
+    const id = e.tool_use_id
+    const hasTests = !e.tool.endsWith('__BuildProject')
+    const startedAt = await $.clock.now()
+    const running = started(id, startedAt, { tool: 'xcode', action: hasTests ? 'test' : 'build', hasTests, scheme: null })
+    const ran = await track($, running, autoOpen, () => next(e))
+
+    if (ran.deny !== undefined) {
+      await drop($, id)
+
+      return ran
     }
 
-    if (finished.status === 'succeeded') {
-      $.ui.toast(`${GLYPH.succeeded} ${verdict(finished)} · ${tally(finished)} · ${seconds(finished.durationMs ?? 0)}`)
+    const data = structuredOf(ran)
+    const report = data === null ? null : hasTests ? parseMcpTests(data) : parseMcpBuild(data)
+    const elapsed = (await $.clock.now()) - startedAt
+
+    if (report === null) {
+      await announce($, { ...running, status: 'failed', durationMs: elapsed }, autoOpen)
+
+      return ran
     }
+
+    const bundled =
+      report.bundlePath === null ? null : await readTests($, report.bundlePath, report.tests).catch(() => null)
+
+    await announce(
+      $,
+      {
+        ...running,
+        scheme: report.scheme,
+        status: report.status,
+        durationMs: report.durationMs ?? elapsed,
+        errorCount: report.issues.filter(isError).length,
+        warningCount: report.issues.filter(one => !isError(one)).length,
+        issues: sorted(report.issues),
+        tests: bundled?.tests ?? report.tests,
+        coverage: bundled?.coverage ?? null,
+        logPath: report.logPath,
+        source: 'xcresult',
+      },
+      autoOpen,
+    )
 
     return ran
   })
@@ -338,6 +476,7 @@ export const register: Register = (on, options) => {
     const visible = latest.issues.filter(one => showsWarnings || isError(one))
     const groups = byFile(visible.slice(0, PANE_ISSUES))
     const failures = latest.tests?.failures ?? []
+    const slowest = latest.tests?.slowest ?? []
     const earlier = list.slice(0, -1).slice(-5).reverse()
     const hasNothingToShow = latest.status === 'failed' && latest.errorCount === 0 && failures.length === 0
 
@@ -349,6 +488,7 @@ export const register: Register = (on, options) => {
         </Box>
         <Text dimColor>{subject(latest)}</Text>
         {latest.status !== 'running' && <Text>{tally(latest)}</Text>}
+        {latest.coverage !== null && <Text dimColor>{`Line coverage ${percent(latest.coverage)}`}</Text>}
         {groups.map(group => (
           <Box flexDirection="column" marginTop={1}>
             <Box flexDirection="row">
@@ -376,6 +516,14 @@ export const register: Register = (on, options) => {
                 <Text color="error">{`  ${GLYPH.failed} ${failure.name}`}</Text>
                 <Text>{`    ${failure.message}`}</Text>
               </Box>
+            ))}
+          </Box>
+        )}
+        {slowest.length > 0 && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text bold>Slowest tests</Text>
+            {slowest.map(test => (
+              <Text dimColor>{`  ${test.seconds.toFixed(2)}s  ${test.name}`}</Text>
             ))}
           </Box>
         )}

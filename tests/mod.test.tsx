@@ -7,8 +7,11 @@ import {
   FAILED_BUILD_RESULTS,
   FAILED_TEST_LOG,
   FAILED_TEST_SUMMARY,
+  MCP_FAILED_BUILD,
+  MCP_FAILED_TESTS,
   SUCCEEDED_BUILD_LOG,
   SUCCEEDED_BUILD_RESULTS,
+  TEST_DETAILS,
 } from './fixtures'
 
 const PLUGIN = 'xcode-build'
@@ -35,11 +38,17 @@ type World = {
   bash: { text: string; isError?: true }
   /** `xcresulttool get <query>` output by query, or null when no bundle was written. */
   bundle: Record<string, string> | null
+  /** What an Xcode MCP tool answers, as its structured result in JSON. */
+  mcp?: string
 }
+
+/** Calls a tool the type declarations do not list: an MCP server's, or the mod's own. */
+const callTool = ($: Engine, input: Record<string, unknown>) =>
+  $.tool.call(input as never) as Promise<{ result?: unknown; isError?: true }>
 
 const failed = (log: string) => ({ text: `Exit code 65\n${log}`, isError: true }) as const
 
-const world = (on: On, { bash, bundle }: World) => {
+const world = (on: On, { bash, bundle, mcp }: World) => {
   const seen = {
     commands: [] as string[],
     statuses: [] as (string | undefined)[],
@@ -51,6 +60,11 @@ const world = (on: On, { bash, bundle }: World) => {
   mock.clock(on, { now: 1_000 })
   mock.env(on, { TMPDIR: '/tmp/t/' })
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('tool.register', (_$, e) => ({ value: { tool: `mcp__${PLUGIN}__${e.name}` } }))
+  on('tool.call', { tool: /^mcp__xcode__/ }, () => ({
+    result: { content: [{ type: 'text', text: mcp ?? '' }], structuredContent: JSON.parse(mcp ?? '{}'), isError: false },
+    text: mcp ?? '',
+  }))
   on('tool.call', { tool: 'Bash' }, (_$, e) => {
     seen.commands.push(e.command)
 
@@ -268,4 +282,57 @@ test('a result bundle the command names is read and left in place', async ($, on
 
   expect(seen.commands).toEqual([command])
   expect(seen.ran).not.toContain('/bin/rm -rf')
+})
+
+test('a build through Xcode\'s MCP server reaches the pane and is handed back unchanged', async ($, on) => {
+  const seen = world(on, { bash: { text: '' }, bundle: null, mcp: MCP_FAILED_BUILD })
+
+  const ran = await callTool($, { tool: 'mcp__xcode__BuildProject', tool_use_id: 'toolu_m1' })
+
+  expect(ran.result).toMatchObject({ structuredContent: JSON.parse(MCP_FAILED_BUILD) })
+  expect(seen.statuses.at(-1)).toBe('✗ Xcode: 2 errors · 0 warnings')
+  expect(seen.commands).toEqual([])
+
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    expect(await ui.find({ type: 'Text', text: /✗ BUILD FAILED/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'Xcode build (MCP)' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /No 'max' candidates/ })).toBeDefined()
+    await ui.unmount()
+  }
+
+  expect((await modelReads($, seen, 'toolu_m1', MCP_FAILED_BUILD))?.content).toBe(MCP_FAILED_BUILD)
+})
+
+test('tests run through Xcode\'s MCP server show the failed and the slowest tests', async ($, on) => {
+  const seen = world(on, {
+    bash: { text: '' },
+    bundle: { 'test-results tests': TEST_DETAILS },
+    mcp: MCP_FAILED_TESTS,
+  })
+
+  await callTool($, { tool: 'mcp__xcode__RunAllTests', tool_use_id: 'toolu_m2' })
+
+  expect(seen.statuses.at(-1)).toBe('✗ Tideline: 0 errors · 0 warnings · 2 tests, 1 failed')
+  expect(seen.ran).not.toContain('/bin/rm -rf')
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /✗ TEST FAILED/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /testLabelUsesUnitSymbol\(\)$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Slowest tests' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /0\.37s {2}TideChartModelTests\/testLabelUsesUnitSymbol/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the details tool lists the warnings a summary only counted', async ($, on) => {
+  world(on, { bash: failed(FAILED_BUILD_LOG), bundle: { 'build-results': FAILED_BUILD_RESULTS } })
+
+  const before = await callTool($, { tool: 'mcp__xcode-build__details', tool_use_id: 'toolu_d0' })
+  expect(before.result).toBe('No build has finished in this session yet.')
+
+  await $.tool.call({ tool: 'Bash', command: 'xcodebuild -scheme Demo build', tool_use_id: 'toolu_d1' })
+  const after = await callTool($, { tool: 'mcp__xcode-build__details', show: 'warnings', tool_use_id: 'toolu_d2' })
+
+  expect(after.result).toContain("Maths.swift:4:26: warning: 'hello()' is deprecated: use greet(_:)")
+  expect(after.result).not.toContain(': error: ')
 })

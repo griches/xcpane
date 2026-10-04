@@ -1,4 +1,4 @@
-import type { Issue, Tests } from '../types'
+import type { Issue, SlowTest, Tests } from '../types'
 
 export type BundleReport = {
   status: 'succeeded' | 'failed' | null
@@ -106,5 +106,65 @@ export const parseTestSummary = (json: string): Tests | null => {
       file: null,
       line: null,
     })),
+    slowest: [],
+  }
+}
+
+export type TestDetails = {
+  slowest: SlowTest[]
+  locations: Map<string, { file: string; line: number | null }>
+}
+
+const SLOWEST = 3
+
+/**
+ * Reads `xcrun xcresulttool get test-results tests`: the slowest tests, and
+ * where each failed test failed, keyed by the test's identifier.
+ */
+export const parseTestDetails = (json: string): TestDetails | null => {
+  const root = parse(json)
+
+  if (root === null) {
+    return null
+  }
+
+  const timed: SlowTest[] = []
+  const locations: TestDetails['locations'] = new Map()
+  const walk = (node: Json) => {
+    const id = typeof node.nodeIdentifier === 'string' ? node.nodeIdentifier : null
+
+    if (id !== null && typeof node.durationInSeconds === 'number') {
+      timed.push({ name: id, seconds: node.durationInSeconds })
+    }
+
+    for (const child of objects(node.children)) {
+      const where = object(child.sourceLocation)
+
+      if (id !== null && where !== null && typeof where.filePath === 'string' && !locations.has(id)) {
+        locations.set(id, { file: where.filePath, line: typeof where.lineNumber === 'number' ? where.lineNumber : null })
+      }
+
+      walk(child)
+    }
+  }
+
+  objects(root.testNodes).forEach(walk)
+
+  return { slowest: timed.sort((a, b) => b.seconds - a.seconds).slice(0, SLOWEST), locations }
+}
+
+/**
+ * Reads `xcrun xccov view --report --only-targets --json`: line coverage from
+ * 0 to 1 across the targets, test bundles left out.
+ */
+export const parseCoverage = (json: string): number | null => {
+  try {
+    const targets = objects(JSON.parse(json)).filter(target => !String(target.buildProductPath ?? '').includes('.xctest'))
+    const executable = targets.reduce((sum, target) => sum + count(target.executableLines, 0), 0)
+    const covered = targets.reduce((sum, target) => sum + count(target.coveredLines, 0), 0)
+
+    return executable === 0 ? null : covered / executable
+  } catch {
+    return null
   }
 }

@@ -1,0 +1,15 @@
+{
+  "name": "griches",
+  "description": "Claude Code mods for Apple-platform development.",
+  "owner": {
+    "name": "Gary Riches",
+    "url": "https://github.com/griches"
+  },
+  "plugins": [
+    {
+      "name": "xcode-build",
+      "source": "./",
+      "description": "Turns xcodebuild and swift build output into a live pane of errors grouped by file, and hands Claude the diagnostics instead of the raw log."
+    }
+  ]
+}

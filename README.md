@@ -1,5 +1,9 @@
 # xcode-build
 
+[![GitHub stars](https://img.shields.io/github/stars/griches/claude-xcode-mod?style=social)](https://github.com/griches/claude-xcode-mod)
+[![CI](https://github.com/griches/claude-xcode-mod/actions/workflows/ci.yml/badge.svg)](https://github.com/griches/claude-xcode-mod/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/griches/claude-xcode-mod.svg)](LICENSE)
+
 A [Claude Code](https://code.claude.com) mod that turns `xcodebuild` and `swift build` output into a live pane of errors grouped by file, and hands Claude the diagnostics instead of the raw log.
 
 ![The xcode-build pane showing a failed build](docs/xcode-build.gif)
@@ -15,13 +19,17 @@ Measured on Xcode 27.1 with a five-file Swift package and three compile errors:
 | Raw log | 295 lines, 47 KB | the same |
 | What Claude reads | 10,039 characters, none of them an error message | 499 characters, every reported error with its file, line and column |
 
+Repeated ten times, the result without the mod had no error message in it in eight runs. The method, the demo project and a script to reproduce it are in [`Benchmarks/`](Benchmarks/README.md).
+
 ## What it does
 
 ![Claude Code with the pane docked on the right](docs/pane.png)
 
 - **Reads Xcode's result bundle.** Adds `-resultBundlePath` to `xcodebuild` commands that name none, then reads errors, warnings and test failures from the bundle with `xcresulttool`. The bundle goes to the temporary folder and is deleted once read.
 - **Condenses what Claude reads.** The tool result becomes the verdict, every error as `file:line:column: error: message`, the failed tests, and a count of warnings per file. The transcript keeps the raw output.
-- **Shows a pane.** Errors grouped by file, failed tests, a toggle for warnings, a running timer while a build is in flight, and the last few builds.
+- **Shows a pane.** Errors grouped by file, failed tests, the slowest tests, line coverage when the run collected it, a toggle for warnings, a running timer while a build is in flight, and the last few builds.
+- **Gives Claude a tool for the rest.** The summary counts warnings without listing them, so the mod adds a tool, `mcp__xcode-build__details`, that Claude can call for every warning, error and failed test of the last build. The summary tells Claude it is there.
+- **Follows builds through Xcode's MCP too.** When Claude builds or tests through Apple's Xcode MCP server (`BuildProject`, `RunAllTests`, `RunSomeTests`), the result is left as it is and shown in the same pane, status line and toast.
 - **Sets the status line** on a failure and shows a toast on a success.
 - **Draws a compact transcript row.** The verdict and the first three errors, in place of the raw log. This applies to a build drawn as its own row; in the fullscreen layout Claude Code folds shell commands into one line ("Ran 1 shell command"), and the row is not drawn there.
 
@@ -31,7 +39,7 @@ It also reads `swift build` and `swift test` from their log output, and a build 
 
 Xcode ships its own MCP server (`xcrun mcpbridge`) that lets Claude build, test and read parsed results through Xcode's tools. From Xcode 27 it can run headless, with Xcode closed, after a one-time `sudo xcrun mcp-server enable`.
 
-If Claude builds through that server, you don't need this mod's log condensing: the MCP already returns structured results. The two solve the problem at different points:
+If Claude builds through that server, you don't need this mod's log condensing: the MCP already returns structured results. The mod still shows those builds in its pane. The two solve the problem at different points:
 
 | | Apple's Xcode MCP | xcode-build |
 | --- | --- | --- |
@@ -40,7 +48,7 @@ If Claude builds through that server, you don't need this mod's log condensing: 
 | Scope | Builds, tests, previews, project navigation, documentation | Build and test results only |
 | Interface | None in Claude Code | A live pane, status line and toast in the terminal |
 
-Use the MCP if you have it set up and Claude uses it to build. This mod helps when Claude reaches for `xcodebuild` in the shell, which it often does, and it adds the pane either way.
+Use the MCP if you have it set up and Claude uses it to build. This mod helps when Claude reaches for `xcodebuild` in the shell, which it often does, and it adds the pane whichever way Claude builds.
 
 ### When the MCP isn't an option
 
@@ -59,6 +67,22 @@ Use the MCP if you have it set up and Claude uses it to build. This mod helps wh
 - **No window switching.** It sits beside the conversation, which matters most over SSH or when Xcode isn't open.
 
 An MCP server returns data to the model and cannot draw interface in Claude Code. That part is specific to mods.
+
+## How this compares to xcsift and xcbeautify
+
+[xcsift](https://github.com/ldomaradzki/xcsift) and [xcbeautify](https://github.com/cpisciotta/xcbeautify) are command-line tools you pipe `xcodebuild` output through. xcsift is built for coding agents and does more than this mod in several places; this mod's difference is that it lives inside Claude Code.
+
+| | xcode-build | xcsift | xcbeautify |
+| --- | --- | --- | --- |
+| What it is | A Claude Code mod | A command-line tool | A command-line tool |
+| Made for | Claude Code | Coding agents and CI | People and CI |
+| How a build reaches it | By itself, when Claude runs `xcodebuild` | The command is piped through it | The command is piped through it |
+| Where results come from | Xcode's result bundle, the log as a fallback | The build log, plus coverage files | The build log |
+| Live pane in Claude Code | Yes | No | No |
+| Other agents, CI, Linux | No | Yes | CI yes |
+| Coverage | A single line-coverage figure | Detailed reports | No |
+
+If you use several agents, or want the same output in CI, xcsift is the better fit. If you work in Claude Code and want the errors in front of you as well as in front of Claude, use this.
 
 ## Requirements
 
@@ -170,7 +194,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-`hooks/register.tsx` holds the hooks; `shell.ts` finds builds in a command, `xcresult.ts` and `log.ts` read results, and `format.ts` words them. The fixtures in `tests/fixtures.ts` are excerpts of real Xcode output.
+`hooks/register.tsx` holds the hooks; `shell.ts` finds builds in a command, `xcresult.ts`, `log.ts` and `mcp.ts` read results, and `format.ts` words them. The fixtures in `tests/fixtures.ts` are excerpts of real Xcode output.
 
 ## License
 
