@@ -1,6 +1,7 @@
 {
   "name": "xcpane",
-  "version": "0.2.4",
+  "displayName": "XC Pane",
+  "version": "0.2.5",
   "description": "Turns xcodebuild and swift build output into a live pane of errors grouped by file, and hands Claude the diagnostics instead of the raw log.",
   "author": {
     "name": "Gary Riches",
