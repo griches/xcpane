@@ -115,7 +115,7 @@ const tick = async ($: EngineInterface) => {
 }
 
 /** Shows `running` in the pane with a ticking timer for as long as `work` takes. */
-const track = async <T,>($: EngineInterface, running: Build, autoOpen: AutoOpen, work: () => Promise<T>): Promise<T> => {
+async function track<T>($: EngineInterface, running: Build, autoOpen: AutoOpen, work: () => Promise<T>): Promise<T> {
   await update($, now, () => running.startedAt)
   await store($, running)
 
