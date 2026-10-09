@@ -331,3 +331,48 @@ export const withResultBundle = (command: string, invocation: Invocation, path: 
 
   return `${command.slice(0, invocation.insertAt)} -resultBundlePath ${quoted}${command.slice(invocation.insertAt)}`
 }
+
+/** Commands that print nothing of their own, or only pass on what the build printed. */
+const PASSIVE = new Set([
+  'cd', 'pushd', 'popd', 'export', 'unset', 'set', 'source', '.', 'true', ':', 'mkdir', 'touch', 'rm', 'sleep', 'wait',
+  'tail', 'head', 'grep', 'egrep', 'rg', 'tee', 'sort', 'uniq', 'cut', 'awk', 'wc', 'tr', 'less', 'more', 'column',
+  'xcbeautify', 'xcpretty', 'xcsift',
+])
+
+/** The name of the command a segment runs, the assignments and wrappers before it passed over. */
+const headOf = (words: Word[]): { name: string; args: Word[] } | null => {
+  let i = 0
+
+  while (i < words.length) {
+    const text = words[i]?.text ?? ''
+
+    if (ASSIGNMENT.test(text)) {
+      i += 1
+    } else if (WRAPPERS.has(text)) {
+      i += 1
+
+      while (words[i]?.text.startsWith('-') === true) {
+        i += VALUED_WRAPPER_FLAGS.has(words[i]?.text ?? '') ? 2 : 1
+      }
+    } else {
+      break
+    }
+  }
+
+  const head = words[i]
+
+  return head === undefined || head.isRedirect ? null : { name: head.text.slice(head.text.lastIndexOf('/') + 1), args: words.slice(i + 1).filter(one => !one.isRedirect) }
+}
+
+/**
+ * The other commands of a line whose own output Claude may be after:
+ * `xcodebuild build && cat config.json` prints a file as well as a build, so
+ * that line's output is not replaced by a summary.
+ */
+export const mixedWith = (command: string): string[] =>
+  split(command)
+    .filter(words => analyse(words) === null)
+    .map(headOf)
+    .filter(one => one !== null)
+    .filter(one => !PASSIVE.has(one.name) && !((one.name === 'cat' && one.args.every(arg => arg.text.startsWith('-'))) || one.name === 'sed'))
+    .map(one => one.name)

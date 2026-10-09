@@ -174,7 +174,7 @@ xcpane is a mod: code that runs inside Claude Code. This is everything it does.
 
 **It runs three local programs**, each by a fixed command: `xcrun xcresulttool` and `xcrun xccov` to read the result bundle, and `/bin/rm -rf` on the one temporary bundle it asked for, at `<temporary folder>/xcpane/<id>.xcresult`.
 
-**It replaces what Claude reads of the build's output.** It hooks the row Claude Code stores for the tool's result and swaps the raw log for the parsed errors, warning counts and failed tests. Your transcript keeps the raw log, and the `details` tool hands the rest back.
+**It replaces what Claude reads of the build's output.** It hooks the row Claude Code stores for the tool's result and swaps the raw log for the parsed errors, warning counts and failed tests. Your transcript keeps the raw log, and the `details` tool hands the rest back. A line that also prints something else, such as `xcodebuild build && cat config.json`, keeps its whole output.
 
 **It watches builds run through Xcode's MCP server**, and asks that same server for the build's warnings. It changes nothing in those calls.
 

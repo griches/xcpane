@@ -18,7 +18,7 @@ import {
 import type { Detail } from './format'
 import { parseLog } from './log'
 import { parseMcpBuild, parseMcpBuildLog, parseMcpTests, structuredOf } from './mcp'
-import { findInvocations, withResultBundle } from './shell'
+import { findInvocations, mixedWith, withResultBundle } from './shell'
 import { parseBuildResults, parseCoverage, parseTestDetails, parseTestSummary } from './xcresult'
 
 const PANE = 'xcpane'
@@ -184,6 +184,8 @@ export const register: Register = (on, options) => {
   const warnings = options.warnings === 'list' ? 'list' : 'count'
   const autoOpen: AutoOpen = options.autoOpen === 'failure' || options.autoOpen === 'never' ? options.autoOpen : 'always'
   const condensed = new Map<string, string>()
+  /** Calls whose line printed more than a build, so their transcript row is left as it is. */
+  const mixed = new Set<string>()
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -345,7 +347,14 @@ export const register: Register = (on, options) => {
     const hasFindings = finished.errorCount > 0 || (finished.tests?.failed ?? 0) > 0
     const isReadable = finished.source !== 'none' && (finished.status === 'succeeded' || hasFindings)
 
-    if (wantsCondense && isReadable && !isStopped && ran.text !== undefined) {
+    // A line that also prints something else (a file, a listing) keeps its output: only the build's part could be summed up.
+    const isMixed = mixedWith(e.command).length > 0
+
+    if (isMixed) {
+      mixed.add(id)
+    }
+
+    if (wantsCondense && isReadable && !isStopped && !isMixed && ran.text !== undefined) {
       const exit = /^Exit code (\d+)/.exec(shown)
       const summary = condense(finished, {
         warnings,
@@ -443,7 +452,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'ToolResult', props: { tool: 'Bash' } }, async ($, e, next) => {
     const build = wantsCompactRow ? (await read($, builds)).find(one => one.id === e.requestId) : undefined
 
-    if (build === undefined || build.status === 'running' || build.source === 'none') {
+    if (build === undefined || build.status === 'running' || build.source === 'none' || mixed.has(build.id)) {
       return next(e)
     }
 

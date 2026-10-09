@@ -348,3 +348,25 @@ test('the details tool lists the warnings a summary only counted', async ($, on)
   expect(after.result).toContain("Maths.swift:4:26: warning: 'hello()' is deprecated: use greet(_:)")
   expect(after.result).not.toContain(': error: ')
 })
+
+test('a line that also prints a file keeps its whole output, and the pane still shows the build', async ($, on) => {
+  const bash = failed(`${FAILED_BUILD_LOG}\n{"marker":"project-config-contents"}`)
+  const seen = world(on, { bash, bundle: { 'build-results': FAILED_BUILD_RESULTS } })
+
+  await $.tool.call({ tool: 'Bash', command: 'xcodebuild -scheme Demo build && cat project-config.json', tool_use_id: 'toolu_mixed' })
+
+  expect(seen.statuses.at(-1)).toBe('✗ Demo: 1 error · 1 warning')
+  const block = await modelReads($, seen, 'toolu_mixed', bash.text)
+  expect(block?.content).toBe(bash.text)
+  expect(block?.content).toContain('project-config-contents')
+
+  const row = await $.ui.mount({
+    plugin: PLUGIN,
+    surface: 'terminal',
+    component: 'ToolResult',
+    requestId: 'toolu_mixed',
+    props: { tool_use_id: 'toolu_mixed', tool: 'Bash', output: 'Exit code 65', isErrored: true },
+  })
+  expect((await row.find({ type: 'Text' }))?.text).toBe('the raw log')
+  await row.unmount()
+})

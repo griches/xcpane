@@ -3,7 +3,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { byFile, condense, details, seconds } from '../hooks/format'
 import { parseMcpBuild, parseMcpBuildLog, parseMcpTests, structuredOf } from '../hooks/mcp'
 import { parseLog } from '../hooks/log'
-import { findInvocations, withResultBundle } from '../hooks/shell'
+import { findInvocations, mixedWith, withResultBundle } from '../hooks/shell'
 import { parseBuildResults, parseCoverage, parseTestDetails, parseTestSummary } from '../hooks/xcresult'
 import type { Build } from '../types'
 import {
@@ -420,5 +420,19 @@ describe('format', () => {
 
   test('words a duration', () => {
     expect([seconds(900), seconds(42_400), seconds(125_000)]).toEqual(['0.9s', '42s', '2m 5s'])
+  })
+})
+
+describe('mixedWith', () => {
+  test('a line that prints something else as well is told apart', () => {
+    expect(mixedWith('xcodebuild -scheme Demo build && cat project-config.json')).toEqual(['cat'])
+    expect(mixedWith('ls -la && swift build')).toEqual(['ls'])
+    expect(mixedWith('xcodebuild test; echo "exit $?"')).toEqual(['echo'])
+  })
+
+  test('a build with only filters and quiet commands around it is not mixed', () => {
+    expect(mixedWith('cd App && xcodebuild -scheme Demo build 2>&1 | tail -80')).toEqual([])
+    expect(mixedWith('set -o pipefail && xcrun xcodebuild build | xcbeautify')).toEqual([])
+    expect(mixedWith('swift build 2>&1 | grep -E "error|warning" | head -40')).toEqual([])
   })
 })
