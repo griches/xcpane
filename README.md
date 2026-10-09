@@ -166,6 +166,24 @@ Each option is a row in Claude Code's config menu (`/config`).
 | `autoOpen` | `always` | Open the pane `always` (when a build starts), on `failure`, or `never` |
 | `compactRow` | `true` | Draw the verdict in the transcript instead of the raw log |
 
+## What it does on your machine
+
+xcpane is a mod: code that runs inside Claude Code. This is everything it does.
+
+**It watches Bash commands.** It hooks the Bash tool. A command that runs `xcodebuild`, `swift build` or `swift test` runs as Claude wrote it, except that one flag, `-resultBundlePath`, is added to an `xcodebuild` command that names none (turn this off with `resultBundle`). Other commands are passed on untouched.
+
+**It runs three local programs**, each by a fixed command: `xcrun xcresulttool` and `xcrun xccov` to read the result bundle, and `/bin/rm -rf` on the one temporary bundle it asked for, at `<temporary folder>/xcpane/<id>.xcresult`.
+
+**It replaces what Claude reads of the build's output.** It hooks the row Claude Code stores for the tool's result and swaps the raw log for the parsed errors, warning counts and failed tests. Your transcript keeps the raw log, and the `details` tool hands the rest back.
+
+**It watches builds run through Xcode's MCP server**, and asks that same server for the build's warnings. It changes nothing in those calls.
+
+**It reads one kind of file**: when Claude Code has saved a long log to a file of its own, xcpane reads that file to see the whole log.
+
+**It makes no network requests, calls no model and keeps nothing between sessions.**
+
+**It adds** the `/xcpane` command, a pane, a status line, a toast, a compact transcript row, and one tool for the model, `details`, which lists stored results and runs no build.
+
 ## Permissions
 
 The mod changes the command Claude runs by appending one flag: `-resultBundlePath '<temporary folder>/xcpane/<id>.xcresult'`. An allow rule such as `Bash(xcodebuild:*)` still matches. A rule that names one exact command will no longer match and Claude Code will ask; set `resultBundle` to `false` to leave commands untouched.
