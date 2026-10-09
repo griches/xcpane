@@ -25,9 +25,6 @@ const PANE = 'xcpane'
 const TITLE = 'Xcode build'
 const COMMAND = 'xcpane'
 const DETAILS_TOOL = 'mcp__xcpane__details'
-// A pattern, since the tool's name is not among the tools the type declarations list.
-const DETAILS_TOOL_NAMED = /^mcp__xcpane__details$/
-const XCODE_MCP_TOOL = /^mcp__.+__(BuildProject|RunAllTests|RunSomeTests)$/
 const KEPT_BUILDS = 20
 const KEPT_ISSUES = 300
 const PANE_ISSUES = 60
@@ -111,6 +108,12 @@ const store = ($: EngineInterface, build: Build) =>
 
 const drop = ($: EngineInterface, id: string) => update($, builds, list => list.filter(one => one.id !== id))
 
+/** Moves the pane's clock on, so a running timer redraws. */
+const tick = async ($: EngineInterface) => {
+  const at = await $.clock.now()
+  await update($, now, () => at)
+}
+
 /** Shows `running` in the pane with a ticking timer for as long as `work` takes. */
 const track = async <T,>($: EngineInterface, running: Build, autoOpen: AutoOpen, work: () => Promise<T>): Promise<T> => {
   await update($, now, () => running.startedAt)
@@ -121,10 +124,7 @@ const track = async <T,>($: EngineInterface, running: Build, autoOpen: AutoOpen,
   }
 
   const ticker = $.clock.every(1000, () => {
-    void $.clock
-      .now()
-      .then(at => update($, now, () => at))
-      .catch(() => undefined)
+    void tick($).catch(() => undefined)
   })
 
   try {
@@ -228,7 +228,7 @@ export const register: Register = (on, options) => {
     }
   })
 
-  on('tool.call', { tool: DETAILS_TOOL_NAMED }, async ($, e) => {
+  on('tool.call', { tool: /^mcp__xcpane__details$/ }, async ($, e) => {
     const latest = (await read($, builds)).findLast(one => one.status !== 'running')
     const asked = (e as { show?: unknown }).show
     const show: Detail = asked === 'errors' || asked === 'warnings' || asked === 'tests' ? asked : 'all'
@@ -371,7 +371,7 @@ export const register: Register = (on, options) => {
 
   // A build Claude runs through Xcode's own MCP server already comes back
   // structured, so it is left as it is and only shown: pane, status, toast.
-  on('tool.call', { tool: XCODE_MCP_TOOL }, async ($, e, next) => {
+  on('tool.call', { tool: /^mcp__.+__(BuildProject|RunAllTests|RunSomeTests)$/ }, async ($, e, next) => {
     const id = e.tool_use_id
     const hasTests = !e.tool.endsWith('__BuildProject')
     const startedAt = await $.clock.now()
