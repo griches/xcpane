@@ -1,6 +1,6 @@
 {
   "name": "xcpane",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Turns xcodebuild and swift build output into a live pane of errors grouped by file, and hands Claude the diagnostics instead of the raw log.",
   "author": {
     "name": "Gary Riches",
@@ -8,6 +8,9 @@
   },
   "homepage": "https://github.com/griches/xcpane",
   "repository": "https://github.com/griches/xcpane",
+  "supportUrl": "https://github.com/griches/xcpane/issues",
+  "documentationUrl": "https://github.com/griches/xcpane#readme",
+  "privacyPolicyUrl": "https://github.com/griches/xcpane#what-it-does-on-your-machine",
   "license": "MIT",
   "keywords": [
     "xcode",
